@@ -124,10 +124,9 @@ async fn main() -> anyhow::Result<()> {
     // We will print this so user know how to debug. Everything else will be logged to the log file to ensure clean stdio communication.
     println!("hyper-mcp started. Logs will be written to: {}", log_file);
 
-    println!("hyper-mcp started. Logs will be written to: {}", cli.log_file.as_deref().unwrap_or("stderr"));
-
+    // Handle JSON string input
     let config: Config = if let Some(config_json) = &cli.config_json {
-        log::info!("using config from JSON string");
+        log::info!("Using config from JSON string");
         match serde_json::from_str(config_json) {
             Ok(config) => config,
             Err(e) => {
@@ -135,11 +134,21 @@ async fn main() -> anyhow::Result<()> {
                 return Err(anyhow::anyhow!("Failed to parse JSON config: {}", e));
             }
         }
-    } else {
-        let config_path = cli.config_file.unwrap_or(default_config_path);
-        log::info!("using config_file at {}", config_path.display());
-        let config_content = tokio::fs::read_to_string(&config_path).await.map_err(|e| {
-            log::error!("Failed to read config file at {:?}: {}", config_path, e);
+    } 
+    // Handle config file input
+    else if let Some(config_file) = &cli.config_file {
+        log::info!("Using config file at {}", config_file.display());
+        let config_content = tokio::fs::read_to_string(config_file).await.map_err(|e| {
+            log::error!("Failed to read config file at {:?}: {}", config_file, e);
+            e
+        })?;
+        serde_json::from_str(&config_content)?
+    }
+    // Use default config path
+    else {
+        log::info!("Using default config file at {}", default_config_path.display());
+        let config_content = tokio::fs::read_to_string(&default_config_path).await.map_err(|e| {
+            log::error!("Failed to read default config file at {:?}: {}", default_config_path, e);
             e
         })?;
         serde_json::from_str(&config_content)?
