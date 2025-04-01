@@ -31,19 +31,27 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(author = "Tuan Anh Tran <me@tuananh.org>", version, about, long_about = None)]
 struct Cli {
-    /// Config input: either a path to a config file or a JSON string (prefixed with 'json:')
-    #[arg(short, long, value_name = "CONFIG")]
-    config: Option<String>,
+    /// Path to a config file
+    #[arg(short = 'c', long, value_name = "FILE")]
+    config_file: Option<PathBuf>,
+    
+    /// JSON string containing configuration
+    #[arg(long, value_name = "JSON")]
+    config_json: Option<String>,
 
-    /// Log output file. Leave empty to write to stderr.
-    #[arg(short = 'l', long = "log.file", value_name = "PATH", env = "LOG_FILE")]
+    /// Log output file path
+    #[arg(
+        short = 'l',
+        long = "log-file",
+        value_name = "PATH",
+        env = "HYPER_MCP_LOG_FILE"
+    )]
     log_file: Option<String>,
 
-    /// Log level.
     #[arg(
-        long = "log.level",
+        long = "log-level",
         value_name = "LEVEL",
-        env = "LOG_LEVEL",
+        env = "HYPER_MCP_LOG_LEVEL",
         default_value = "info"
     )]
     log_level: Option<String>,
@@ -91,27 +99,19 @@ async fn main() -> anyhow::Result<()> {
 
     config::init_logger(cli.log_file.as_deref(), cli.log_level.as_deref())?;
 
-    let config: Config = if let Some(config_input) = cli.config {
-        // First try to parse the input as JSON
-        match serde_json::from_str(&config_input) {
-            Ok(config) => {
-                log::info!("using config from command line JSON");
-                config
-            }
-            Err(_) => {
-                // If it's not valid JSON, treat it as a file path
-                let config_path = PathBuf::from(config_input);
-                log::info!("using config_file at {}", config_path.display());
-                let config_content = tokio::fs::read_to_string(&config_path).await.map_err(|e| {
-                    log::error!("Failed to read config file at {:?}: {}", config_path, e);
-                    e
-                })?;
-                serde_json::from_str(&config_content)?
+    println!("hyper-mcp started. Logs will be written to: {}", cli.log_file.as_deref().unwrap_or("stderr"));
+
+    let config: Config = if let Some(config_json) = &cli.config_json {
+        log::info!("using config from JSON string");
+        match serde_json::from_str(config_json) {
+            Ok(config) => config,
+            Err(e) => {
+                log::error!("Failed to parse JSON config: {}", e);
+                return Err(anyhow::anyhow!("Failed to parse JSON config: {}", e));
             }
         }
     } else {
-        // Use default config path
-        let config_path = default_config_path;
+        let config_path = cli.config_file.unwrap_or(default_config_path);
         log::info!("using config_file at {}", config_path.display());
         let config_content = tokio::fs::read_to_string(&config_path).await.map_err(|e| {
             log::error!("Failed to read config file at {:?}: {}", config_path, e);
